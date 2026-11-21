@@ -16,14 +16,25 @@ const DEMO_PROFILE_IDS = [
  * Conmutador de desarrollo para probar separación de rutas y bloqueos CU-10 en 1 clic.
  */
 export function DevRoleSwitcher() {
-  const { currentUser, currentTenant, impersonateAccount, logout, resetDemoData } = useMockStore()
+  const {
+    currentUser,
+    currentTenant,
+    authMode,
+    setAuthMode,
+    impersonateAccount,
+    logout,
+    resetDemoData,
+  } = useMockStore()
   const [open, setOpen] = useState(false)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [switching, setSwitching] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
 
-  const handleSelectProfile = (accountId: string) => {
-    const decision = impersonateAccount(accountId)
+  const handleSelectProfile = async (accountId: string) => {
+    setSwitching(true)
+    const decision = await impersonateAccount(accountId)
+    setSwitching(false)
     if (!decision.allowed) {
       setStatusMessage(decision.message)
       return
@@ -89,6 +100,35 @@ export function DevRoleSwitcher() {
           </div>
 
           <div className="mt-3 rounded-md bg-slate-800 px-3 py-2 text-xs">
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-700 pb-2">
+              <span className="text-slate-300">Origen Auth:</span>
+              <div className="inline-flex rounded border border-slate-600 bg-slate-900 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('mock')
+                    setStatusMessage('Modo cambiado a Mock local.')
+                  }}
+                  className={`rounded px-2 py-1 text-xs font-semibold ${
+                    authMode === 'mock' ? 'bg-teal-600 text-white' : 'text-slate-300'
+                  }`}
+                >
+                  Mock local
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('identity')
+                    setStatusMessage('Modo cambiado a Identity API (.NET 10).')
+                  }}
+                  className={`rounded px-2 py-1 text-xs font-semibold ${
+                    authMode === 'identity' ? 'bg-teal-600 text-white' : 'text-slate-300'
+                  }`}
+                >
+                  Identity API
+                </button>
+              </div>
+            </div>
             <p className="text-slate-300">
               Ruta actual: <span className="font-mono text-white">{location.pathname}</span>
             </p>
@@ -116,8 +156,9 @@ export function DevRoleSwitcher() {
                 <button
                   key={profile.id}
                   type="button"
+                  disabled={switching}
                   onClick={() => handleSelectProfile(profile.id)}
-                  className={`flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left text-xs ${
+                  className={`flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left text-xs disabled:opacity-60 ${
                     isCurrent
                       ? 'border-teal-400 bg-teal-900/60 text-white'
                       : 'border-slate-700 bg-slate-800/80 text-slate-100 hover:bg-slate-800'
@@ -142,8 +183,8 @@ export function DevRoleSwitcher() {
               {currentUser ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    logout()
+                  onClick={async () => {
+                    await logout()
                     setOpen(false)
                     navigate('/login')
                   }}

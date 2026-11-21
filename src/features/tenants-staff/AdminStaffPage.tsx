@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, type FormEvent } from 'react'
 import { formatDateTimeGmt6 } from '../../design-system/gmt6.ts'
 import { ModalDialog } from '../../design-system/ModalDialog.tsx'
 import { RxIcon } from '../../design-system/Icons.tsx'
@@ -7,6 +7,7 @@ import { StatusBadge } from '../../design-system/StatusBadge.tsx'
 import type { AssignableClinicRole, OrgRole, StaffAccount } from '../../domain/types.ts'
 import { ROLE_LABELS, canUpdateStaffRoleAndPermissions } from '../../guards/policy.ts'
 import { useMockStore } from '../../mocks/useMockStore.ts'
+import { validatePasswordPolicy } from '../../services/identityClient.ts'
 
 type StaffModal =
   | { type: 'create' }
@@ -20,11 +21,22 @@ export function AdminStaffPage() {
     currentUser,
     currentTenant,
     accounts,
+    authMode,
+    identityDirectory,
+    identityDirectoryLoading,
+    identityDirectoryError,
+    refreshIdentityDirectory,
     createStaff,
     updateStaffRoleAndPermissions,
     toggleStaffActive,
     updateAuxiliaryLinks,
   } = useMockStore()
+
+  useEffect(() => {
+    if (authMode === 'identity' && currentUser?.role === 'ADMIN_CLINICA') {
+      void refreshIdentityDirectory()
+    }
+  }, [authMode, currentUser?.role, refreshIdentityDirectory])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<'ALL' | AssignableClinicRole>('ALL')
@@ -32,6 +44,7 @@ export function AdminStaffPage() {
   const [viewMode, setViewMode] = useState<DataViewMode>('ready')
   const [banner, setBanner] = useState<{ tone: 'positive' | 'critical'; text: string } | null>(null)
   const [modal, setModal] = useState<StaffModal>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const tableHeadingId = useId()
 
@@ -39,6 +52,7 @@ export function AdminStaffPage() {
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [demoPassword, setDemoPassword] = useState('Vital2026!')
+  const [generateTempPassword, setGenerateTempPassword] = useState(true)
   const [role, setRole] = useState<AssignableClinicRole>('ESPECIALISTA')
   const [specialty, setSpecialty] = useState('Medicina General')
   const [licenseCode, setLicenseCode] = useState('')
@@ -69,11 +83,37 @@ export function AdminStaffPage() {
 
   if (!currentTenant) return null
 
-  const tenantAccounts = accounts.filter((a) => a.tenantId === currentTenant.id)
+  const tenantAccounts: StaffAccount[] =
+    authMode === 'identity'
+      ? (identityDirectory?.accounts ?? []).map((member) => ({
+          id: member.id,
+          tenantId: currentTenant.id,
+          fullName: member.fullName,
+          email: member.email,
+          demoPassword: '',
+          role: member.role,
+          active: member.active,
+          mustChangePassword: member.mustChangePassword,
+          specialty: member.specialty ?? undefined,
+          professionalAttribution: member.professionalAttribution,
+          permissions: member.permissions,
+          linkedSpecialistIds: member.linkedSpecialistIds,
+          createdAtGmt6: member.createdAtGmt6,
+          roleAuditLog: member.roleAuditLog,
+        }))
+      : accounts.filter((a) => a.tenantId === currentTenant.id)
+
   const activeAccounts = tenantAccounts.filter((a) => a.active)
+  const activeCount =
+    authMode === 'identity' && identityDirectory
+      ? identityDirectory.activeCount
+      : activeAccounts.length
   const activeSpecialists = activeAccounts.filter((a) => a.role === 'ESPECIALISTA')
-  const quotaMax = currentTenant.plan.maxActiveAccounts
-  const quotaReached = activeAccounts.length >= quotaMax
+  const quotaMax =
+    authMode === 'identity' && identityDirectory
+      ? identityDirectory.maxActiveAccounts
+      : currentTenant.plan.maxActiveAccounts
+  const quotaReached = activeCount >= quotaMax
 
   const filteredAccounts = tenantAccounts.filter((acc) => {
     if (roleFilter !== 'ALL' && acc.role !== roleFilter) return false
@@ -91,7 +131,8 @@ export function AdminStaffPage() {
   const openCreateModal = () => {
     setFullName('')
     setEmail('')
-    setDemoPassword('Vital2026!')
+    setGenerateTempPassword(authMode === 'identity')
+    setDemoPassword(authMode === 'identity' ? '' : 'Vital2026!')
     setRole('ESPECIALISTA')
     setSpecialty('Medicina General')
     setLicenseCode('')
@@ -124,7 +165,7 @@ export function AdminStaffPage() {
     setModal({ type: 'links', account })
   }
 
-  const handleCreateSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleCreateSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setCreateError(null)
 
@@ -133,10 +174,20 @@ export function AdminStaffPage() {
       return
     }
 
-    const decision = createStaff({
+    if (authMode === 'identity' && !generateTempPassword) {
+      const pwdError = validatePasswordPolicy(demoPassword)
+      if (pwdError) {
+        setCreateError(pwdError)
+        return
+      }
+    }
+
+    setSubmitting(true)
+    const decision = await createStaff({
       fullName,
       email,
       demoPassword,
+      generateTemporaryPassword: authMode === 'identity' ? generateTempPassword : false,
       role,
       specialty,
       licenseCode,
@@ -148,6 +199,7 @@ export function AdminStaffPage() {
         canUploadStudies,
       },
     })
+    setSubmitting(false)
 
     if (!decision.allowed) {
       setCreateError(decision.message)
@@ -157,16 +209,19 @@ export function AdminStaffPage() {
     setModal(null)
     setBanner({
       tone: 'positive',
-      text: `Cuenta "${fullName.trim()}" registrada dentro de ${currentTenant.name}.`,
+      text: decision.temporaryPassword
+        ? `Cuenta "${fullName.trim()}" registrada en ${currentTenant.name}. Contraseña temporal generada (cópiala ahora, no se volverá a mostrar): ${decision.temporaryPassword}`
+        : `Cuenta "${fullName.trim()}" registrada dentro de ${currentTenant.name}.`,
     })
   }
 
-  const handleRoleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleRoleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (modal?.type !== 'roles') return
     setRoleError(null)
 
-    const decision = updateStaffRoleAndPermissions({
+    setSubmitting(true)
+    const decision = await updateStaffRoleAndPermissions({
       accountId: modal.account.id,
       role: editRole,
       canPrescribe: editCanPrescribe,
@@ -176,6 +231,7 @@ export function AdminStaffPage() {
       licenseCode: editLicenseCode,
       title: editLicenseTitle,
     })
+    setSubmitting(false)
 
     if (!decision.allowed) {
       setRoleError(decision.message)
@@ -204,12 +260,14 @@ export function AdminStaffPage() {
     }
   }
 
-  const handleLinksSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleLinksSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (modal?.type !== 'links') return
     setLinksError(null)
 
-    const decision = updateAuxiliaryLinks(modal.account.id, selectedSpecialistIds)
+    setSubmitting(true)
+    const decision = await updateAuxiliaryLinks(modal.account.id, selectedSpecialistIds)
+    setSubmitting(false)
     if (!decision.allowed) {
       setLinksError(decision.message)
       return
@@ -223,10 +281,12 @@ export function AdminStaffPage() {
     })
   }
 
-  const handleToggleActiveConfirm = () => {
+  const handleToggleActiveConfirm = async () => {
     if (modal?.type !== 'toggleActive') return
     setToggleError(null)
-    const decision = toggleStaffActive(modal.account.id)
+    setSubmitting(true)
+    const decision = await toggleStaffActive(modal.account.id)
+    setSubmitting(false)
     if (!decision.allowed) {
       setToggleError(decision.message)
       return
@@ -279,8 +339,7 @@ export function AdminStaffPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-ink">
-              Ocupación de cuentas activas: {activeAccounts.length} de {quotaMax} (
-              {currentTenant.plan.name})
+              Ocupación de cuentas activas: {activeCount} de {quotaMax} ({currentTenant.plan.name})
             </p>
             <p className="mt-0.5 text-xs text-ink-muted">
               {quotaReached
@@ -290,7 +349,7 @@ export function AdminStaffPage() {
           </div>
           <StatusBadge
             tone={quotaReached ? 'warning' : 'positive'}
-            label={quotaReached ? 'Cuota completa' : `${quotaMax - activeAccounts.length} disponibles`}
+            label={quotaReached ? 'Cuota completa' : `${quotaMax - activeCount} disponibles`}
           />
         </div>
       </section>
@@ -387,18 +446,28 @@ export function AdminStaffPage() {
         </search>
       </section>
 
-      {viewMode === 'loading' ? (
+      {viewMode === 'loading' || (viewMode === 'ready' && authMode === 'identity' && identityDirectoryLoading) ? (
         <StateView
           mode="loading"
           title="Cargando personal de la clínica..."
           message="Consultando cuentas, roles predefinidos y vínculos organizativos vigentes."
         />
-      ) : viewMode === 'error' ? (
+      ) : viewMode === 'error' || (viewMode === 'ready' && authMode === 'identity' && identityDirectoryError) ? (
         <StateView
           mode="error"
           title="Error al consultar el directorio de personal"
-          message="Fallo simulado de comunicación con Identity dentro del tenant."
-          onRetry={() => setViewMode('ready')}
+          message={
+            authMode === 'identity' && viewMode === 'ready' && identityDirectoryError
+              ? identityDirectoryError
+              : 'Fallo simulado de comunicación con Identity dentro del tenant.'
+          }
+          onRetry={() => {
+            if (viewMode === 'error') {
+              setViewMode('ready')
+            } else {
+              void refreshIdentityDirectory()
+            }
+          }}
         />
       ) : filteredAccounts.length === 0 ? (
         <StateView
@@ -464,6 +533,11 @@ export function AdminStaffPage() {
                         tone={acc.active ? 'positive' : 'neutral'}
                         label={acc.active ? 'Activa' : 'Desactivada'}
                       />
+                      {acc.mustChangePassword ? (
+                        <span className="mt-1 block font-mono text-xs text-amber-800">
+                          Clave temporal pendiente
+                        </span>
+                      ) : null}
                     </td>
                     <td data-label="Atribución y vínculos">
                       {acc.role === 'ESPECIALISTA' ? (
@@ -607,16 +681,50 @@ export function AdminStaffPage() {
               </p>
             </div>
             <div>
-              <label htmlFor="staff-pass" className="block font-semibold text-ink">
-                Contraseña demo
-              </label>
-              <input
-                id="staff-pass"
-                type="text"
-                value={demoPassword}
-                onChange={(e) => setDemoPassword(e.target.value)}
-                className="mt-1 w-full rounded-md border px-3 py-2 font-mono"
-              />
+              {authMode === 'identity' ? (
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2 font-semibold text-ink">
+                    <input
+                      type="checkbox"
+                      checked={generateTempPassword}
+                      onChange={(e) => setGenerateTempPassword(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>Generar contraseña temporal segura en Identity</span>
+                  </label>
+                  {!generateTempPassword ? (
+                    <div>
+                      <label htmlFor="staff-pass" className="block text-xs font-semibold text-ink">
+                        Contraseña inicial (8-40 chars, letra, número y símbolo)
+                      </label>
+                      <input
+                        id="staff-pass"
+                        type="text"
+                        value={demoPassword}
+                        onChange={(e) => setDemoPassword(e.target.value)}
+                        className="mt-1 w-full rounded-md border px-3 py-2 font-mono"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-ink-muted">
+                      Identity generará una clave aleatoria de 12 caracteres y marcará cambio obligatorio.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="staff-pass" className="block font-semibold text-ink">
+                    Contraseña demo
+                  </label>
+                  <input
+                    id="staff-pass"
+                    type="text"
+                    value={demoPassword}
+                    onChange={(e) => setDemoPassword(e.target.value)}
+                    className="mt-1 w-full rounded-md border px-3 py-2 font-mono"
+                  />
+                </>
+              )}
             </div>
           </div>
 
@@ -743,7 +851,8 @@ export function AdminStaffPage() {
             </button>
             <button
               type="submit"
-              className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover"
+              disabled={submitting}
+              className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover disabled:opacity-60"
             >
               Crear cuenta
             </button>
@@ -925,7 +1034,8 @@ export function AdminStaffPage() {
               </button>
               <button
                 type="submit"
-                className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover"
+                disabled={submitting}
+                className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover disabled:opacity-60"
               >
                 Aplicar cambios con auditoría
               </button>
@@ -1002,7 +1112,8 @@ export function AdminStaffPage() {
               </button>
               <button
                 type="submit"
-                className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover"
+                disabled={submitting}
+                className="inline-flex min-h-11 items-center rounded-md bg-clinical px-4 py-2 font-semibold text-white hover:bg-clinical-hover disabled:opacity-60"
               >
                 Guardar vínculos
               </button>
@@ -1047,8 +1158,9 @@ export function AdminStaffPage() {
               </button>
               <button
                 type="button"
+                disabled={submitting}
                 onClick={handleToggleActiveConfirm}
-                className={`inline-flex min-h-11 items-center rounded-md px-4 py-2 font-semibold text-white ${
+                className={`inline-flex min-h-11 items-center rounded-md px-4 py-2 font-semibold text-white disabled:opacity-60 ${
                   modal.account.active
                     ? 'bg-red-700 hover:bg-red-800'
                     : 'bg-clinical hover:bg-clinical-hover'

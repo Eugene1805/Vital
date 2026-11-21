@@ -15,7 +15,17 @@ interface RouteGuardProps {
  * Nunca expone datos clínicos ni administrativos de otro tenant al denegar.
  */
 export function RouteGuard({ scope, children }: RouteGuardProps) {
-  const { currentUser, currentTenant } = useMockStore()
+  const { currentUser, currentTenant, authLoading } = useMockStore()
+
+  if (authLoading) {
+    return (
+      <main id="main-content" tabIndex={-1} className="mx-auto max-w-xl px-4 py-12 text-center">
+        <p role="status" className="text-sm font-medium text-ink-muted">
+          Verificando sesión vigente en Identity...
+        </p>
+      </main>
+    )
+  }
 
   if (!currentUser) {
     return <Navigate to={scope === 'PLATFORM' ? '/platform/login' : '/login'} replace />

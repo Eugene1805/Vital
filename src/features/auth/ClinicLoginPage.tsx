@@ -66,7 +66,7 @@ const DEMO_CASES: DemoCredentialPreset[] = [
 ]
 
 export function ClinicLoginPage() {
-  const { tenants, accounts, loginClinic } = useMockStore()
+  const { tenants, authMode, identityApiUrl, loginClinic } = useMockStore()
   const navigate = useNavigate()
 
   const [clinicSlug, setClinicSlug] = useState('clinica-norte')
@@ -75,6 +75,7 @@ export function ClinicLoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [touched, setTouched] = useState<{ slug?: boolean; email?: boolean; password?: boolean }>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [showDemoCases, setShowDemoCases] = useState(false)
 
   const slugInputRef = useRef<HTMLInputElement>(null)
@@ -93,7 +94,7 @@ export function ClinicLoginPage() {
       : undefined
   const passwordError = !password ? 'Ingresa tu contraseña.' : undefined
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setTouched({ slug: true, email: true, password: true })
     setSubmitError(null)
@@ -111,18 +112,16 @@ export function ClinicLoginPage() {
       return
     }
 
-    const decision = loginClinic(clinicSlug, email, password)
+    setSubmitting(true)
+    const decision = await loginClinic(clinicSlug, email, password)
+    setSubmitting(false)
+
     if (!decision.allowed) {
       setSubmitError(decision.message)
       return
     }
 
-    const matched = accounts.find(
-      (a) =>
-        a.email.toLowerCase() === email.trim().toLowerCase() &&
-        a.tenantId === resolvedTenant?.id,
-    )
-    navigate(matched ? defaultRouteForRole(matched.role) : '/admin/staff', { replace: true })
+    navigate(defaultRouteForRole(decision.role), { replace: true })
   }
 
   const applyPreset = (preset: DemoCredentialPreset) => {
@@ -150,9 +149,14 @@ export function ClinicLoginPage() {
               <p className="text-xs text-ink-muted">Portal de clínica (CU-13)</p>
             </div>
           </div>
-          <span className="rounded border border-divider bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted">
-            GMT-6
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded border border-divider bg-surface px-2 py-1 font-mono text-xs text-ink-muted">
+              {authMode === 'identity' ? 'Identity API' : 'Mock local'}
+            </span>
+            <span className="rounded border border-divider bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted">
+              GMT-6
+            </span>
+          </div>
         </div>
 
         <section
@@ -302,11 +306,18 @@ export function ClinicLoginPage() {
 
             <button
               type="submit"
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-clinical px-4 py-2.5 text-sm font-semibold text-white hover:bg-clinical-hover"
+              disabled={submitting}
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-clinical px-4 py-2.5 text-sm font-semibold text-white hover:bg-clinical-hover disabled:opacity-60"
             >
-              Ingresar a la clínica
+              {submitting ? 'Validando acceso...' : 'Ingresar a la clínica'}
             </button>
           </form>
+
+          {authMode === 'identity' ? (
+            <p className="mt-3 font-mono text-xs text-ink-muted">
+              Conectado a saas-identity ({identityApiUrl})
+            </p>
+          ) : null}
 
           <div className="mt-5 border-t border-divider pt-4">
             <Link

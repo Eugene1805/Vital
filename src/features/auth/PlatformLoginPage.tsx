@@ -4,7 +4,7 @@ import { ClinicIcon, EyeIcon, EyeOffIcon, ShieldIcon } from '../../design-system
 import { useMockStore } from '../../mocks/useMockStore.ts'
 
 export function PlatformLoginPage() {
-  const { loginPlatform } = useMockStore()
+  const { authMode, loginPlatform } = useMockStore()
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -12,6 +12,7 @@ export function PlatformLoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [touched, setTouched] = useState<{ email?: boolean; password?: boolean }>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const emailRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
@@ -24,7 +25,7 @@ export function PlatformLoginPage() {
       : undefined
   const passwordError = !password ? 'Ingresa la contraseña de plataforma.' : undefined
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setTouched({ email: true, password: true })
     setSubmitError(null)
@@ -38,7 +39,9 @@ export function PlatformLoginPage() {
       return
     }
 
-    const decision = loginPlatform(email, password)
+    setSubmitting(true)
+    const decision = await loginPlatform(email, password)
+    setSubmitting(false)
     if (!decision.allowed) {
       setSubmitError(decision.message)
       return
@@ -64,9 +67,14 @@ export function PlatformLoginPage() {
               <p className="text-xs text-ink-muted">Gobernanza SaaS global (SuperAdmin)</p>
             </div>
           </div>
-          <span className="rounded border border-divider bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted">
-            GMT-6
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded border border-divider bg-surface px-2 py-1 font-mono text-xs text-ink-muted">
+              {authMode === 'identity' ? 'Identity API' : 'Mock local'}
+            </span>
+            <span className="rounded border border-divider bg-surface px-2.5 py-1 font-mono text-xs text-ink-muted">
+              GMT-6
+            </span>
+          </div>
         </div>
 
         <section
@@ -164,9 +172,10 @@ export function PlatformLoginPage() {
 
             <button
               type="submit"
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-platform px-4 py-2.5 text-sm font-semibold text-white hover:bg-platform-hover"
+              disabled={submitting}
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-platform px-4 py-2.5 text-sm font-semibold text-white hover:bg-platform-hover disabled:opacity-60"
             >
-              Ingresar a Plataforma
+              {submitting ? 'Validando acceso...' : 'Ingresar a Plataforma'}
             </button>
           </form>
 
