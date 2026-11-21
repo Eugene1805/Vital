@@ -4,6 +4,7 @@ import type {
   PolicyDecision,
   RouteScope,
   StaffAccount,
+  TenantAccessState,
   TenantStatus,
 } from '../domain/types.ts'
 
@@ -26,6 +27,26 @@ export const TENANT_STATUS_LABELS: Record<TenantStatus, string> = {
   PENDIENTE_ADMIN: 'PENDIENTE_ADMIN',
   ACTIVA: 'ACTIVA',
   SUSPENDIDA: 'SUSPENDIDA',
+}
+
+/**
+ * Contrato Platform -> Identity (GetTenantAccessState):
+ * Devuelve únicamente estado de acceso calculado sin datos comerciales ni PII.
+ */
+export function getTenantAccessState(
+  tenantId: string | null,
+  tenants: ClinicTenant[],
+  evaluatedAtGmt6: string,
+): TenantAccessState | null {
+  if (!tenantId) return null
+  const tenant = tenants.find((t) => t.id === tenantId)
+  if (!tenant) return null
+  return {
+    tenantId: tenant.id,
+    state: tenant.status,
+    mayAuthenticate: tenant.status === 'ACTIVA',
+    evaluatedAtGmt6,
+  }
 }
 
 /** CU-13: Comprueba contexto de tenant, estado operativo de la clínica y vigencia de la cuenta. */
@@ -59,14 +80,22 @@ export function canAuthenticate(
     )
   }
 
-  if (tenant.status === 'PENDIENTE_ADMIN') {
+  const accessState = getTenantAccessState(tenant.id, [tenant], '')
+  if (!accessState) {
+    return deny(
+      'TENANT_STATE_UNAVAILABLE',
+      'No fue posible verificar de forma confiable el estado del tenant para iniciar sesión.',
+    )
+  }
+
+  if (accessState.state === 'PENDIENTE_ADMIN') {
     return deny(
       'TENANT_PENDING_ADMIN',
       'La clínica está en estado PENDIENTE_ADMIN hasta completar la habilitación de su administrador inicial.',
     )
   }
 
-  if (tenant.status === 'SUSPENDIDA') {
+  if (accessState.state === 'SUSPENDIDA' || !accessState.mayAuthenticate) {
     return deny(
       'TENANT_SUSPENDED',
       'La clínica está SUSPENDIDA. Los registros históricos permanecen conservados, pero la operación está detenida.',
@@ -123,11 +152,12 @@ export function canCompleteInitialAdmin(
   return allow()
 }
 
-/** CU-15: Solo SuperAdmin cambia entre ACTIVA y SUSPENDIDA; bloquea cambios desde PENDIENTE_ADMIN o redundantes. */
+/** CU-15: Solo SuperAdmin cambia entre ACTIVA y SUSPENDIDA; el motivo es obligatorio al suspender y opcional al reactivar. */
 export function canChangeClinicStatus(
   actor: StaffAccount | null,
   tenant: ClinicTenant | undefined,
   targetStatus: 'ACTIVA' | 'SUSPENDIDA',
+  reason = '',
 ): PolicyDecision {
   if (!actor || !actor.active || actor.role !== 'SUPER_ADMIN') {
     return deny('FORBIDDEN_PLATFORM_ONLY', 'Solo SuperAdmin puede suspender o reactivar clínicas.')
@@ -143,6 +173,12 @@ export function canChangeClinicStatus(
   }
   if (tenant.status === targetStatus) {
     return deny('REDUNDANT_STATE', `La clínica ya se encuentra en estado ${targetStatus}.`)
+  }
+  if (targetStatus === 'SUSPENDIDA' && !reason.trim()) {
+    return deny(
+      'REASON_REQUIRED',
+      'El motivo administrativo es obligatorio para suspender una clínica (CU-15).',
+    )
   }
   return allow()
 }
@@ -340,6 +376,31 @@ export function evaluateRouteAccess(
       : deny('FORBIDDEN_ROLE', 'Esta sección administrativa está restringida al rol AdminClinica.')
   }
 
+  if (scope === 'CLINIC_ADMIN_OR_AUX') {
+    return actor.role === 'ADMIN_CLINICA' || actor.role === 'AUXILIAR'
+      ? allow()
+      : deny(
+          'FORBIDDEN_ROLE',
+          'La gestión administrativa de pacientes y permisos corresponde a AdminClinica o personal auxiliar (CU-10).',
+        )
+  }
+
+  if (scope === 'CLINIC_PATIENT_REGISTER') {
+    if (actor.role === 'ADMIN_CLINICA') {
+      return allow()
+    }
+    if (
+      (actor.role === 'AUXILIAR' || actor.role === 'ESPECIALISTA') &&
+      actor.permissions.canRegisterPatients
+    ) {
+      return allow()
+    }
+    return deny(
+      'FORBIDDEN_PATIENT_REGISTER',
+      'Tu cuenta no tiene habilitada la facultad administrativa para registrar pacientes (CU-01).',
+    )
+  }
+
   if (scope === 'CLINIC_AUXILIAR') {
     return actor.role === 'AUXILIAR'
       ? allow()
@@ -366,8 +427,8 @@ export function defaultRouteForRole(role: OrgRole): string {
     case 'ADMIN_CLINICA':
       return '/admin/staff'
     case 'AUXILIAR':
-      return '/admin/workspace'
+      return '/admin/patients'
     case 'ESPECIALISTA':
-      return '/clinical/workspace'
+      return '/clinical/records'
   }
 }

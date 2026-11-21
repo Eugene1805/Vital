@@ -40,6 +40,29 @@ export function todayGmt6Date(reference = new Date()): string {
   return nowGmt6Iso(reference).slice(0, 10)
 }
 
+/** Suma meses manteniendo día acotado al último día del mes en formato YYYY-MM-DDTHH:mm:ss-06:00. */
+export function addMonthsGmt6Iso(baseIso: string, months: number): string {
+  const parsed = new Date(baseIso)
+  const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed
+  const shifted = toShiftedUtcDate(base)
+  const targetYear = shifted.getUTCFullYear()
+  const targetMonthZero = shifted.getUTCMonth() + months
+  const originalDay = shifted.getUTCDate()
+
+  const normalizedYear = targetYear + Math.floor(targetMonthZero / 12)
+  const normalizedMonthZero = ((targetMonthZero % 12) + 12) % 12
+  const maxDayInMonth = new Date(Date.UTC(normalizedYear, normalizedMonthZero + 1, 0)).getUTCDate()
+  const clampedDay = Math.min(originalDay, maxDayInMonth)
+
+  const y = normalizedYear
+  const m = pad2(normalizedMonthZero + 1)
+  const d = pad2(clampedDay)
+  const hh = pad2(shifted.getUTCHours())
+  const mm = pad2(shifted.getUTCMinutes())
+  const ss = pad2(shifted.getUTCSeconds())
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}-06:00`
+}
+
 /** Formatea una marca ISO a representación legible fija en GMT-6. */
 export function formatDateTimeGmt6(iso: string): string {
   const parsed = new Date(iso)

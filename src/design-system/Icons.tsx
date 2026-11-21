@@ -155,3 +155,22 @@ export function RxIcon(props: IconProps) {
     </svg>
   )
 }
+
+export function FileTextIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <path d="M6 3h9l5 5v13H6V3z" />
+      <path d="M15 3v5h5" />
+      <path d="M9 13h6M9 17h4" />
+    </svg>
+  )
+}
+
+export function KeyIcon(props: IconProps) {
+  return (
+    <svg {...baseProps} {...props}>
+      <circle cx="8" cy="14" r="4" />
+      <path d="M11.2 11.2L20 3M17 6l3 3M15 8l2 2" />
+    </svg>
+  )
+}

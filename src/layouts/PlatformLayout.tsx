@@ -9,7 +9,10 @@ export function PlatformLayout({ children }: { children: ReactNode }) {
       brandIcon={<ShieldIcon className="h-5 w-5" />}
       contextBadge="Plataforma SaaS"
       subtitle="Gobernanza global de clínicas y planes (sin acceso clínico)"
-      navItems={[{ to: '/platform/clinics', label: 'Clínicas y planes' }]}
+      navItems={[
+        { to: '/platform/clinics', label: 'Clínicas y planes' },
+        { to: '/platform/bi', label: 'Indicadores BI' },
+      ]}
     >
       {children}
     </AppShell>

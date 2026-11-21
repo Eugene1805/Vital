@@ -10,6 +10,16 @@ export function ClinicalLayout({ children }: { children: ReactNode }) {
     ? `Espacio Clínico (${currentUser.specialty})`
     : 'Espacio Clínico'
 
+  const navItems = [
+    { to: '/clinical/records', label: 'Mis expedientes' },
+    { to: '/clinical/open-notes', label: 'Notas abiertas' },
+    { to: '/clinical/my-cuts', label: 'Mis cortes' },
+    { to: '/clinical/workspace', label: 'Espacio clínico' },
+  ]
+  if (currentUser?.permissions.canRegisterPatients) {
+    navItems.push({ to: '/admin/patients/new', label: 'Registrar paciente' })
+  }
+
   return (
     <AppShell
       accent="clinical"
@@ -20,7 +30,7 @@ export function ClinicalLayout({ children }: { children: ReactNode }) {
           ? `${currentTenant.name} (${currentTenant.slug})`
           : 'Operación clínica por especialidad'
       }
-      navItems={[{ to: '/clinical/workspace', label: 'Espacio clínico' }]}
+      navItems={navItems}
     >
       {children}
     </AppShell>

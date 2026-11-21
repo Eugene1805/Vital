@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { formatDateTimeGmt6 } from '../../design-system/gmt6.ts'
 import { RxIcon } from '../../design-system/Icons.tsx'
 import { StatusBadge } from '../../design-system/StatusBadge.tsx'
@@ -115,9 +116,21 @@ export function ClinicalWorkspacePage() {
       </section>
 
       <section className="rounded-lg border border-teal-300 bg-teal-50 p-4 text-sm text-teal-950">
-        <strong>Base lista para Oleadas 2 y 3:</strong> en las siguientes oleadas se conectará aquí
-        el listado de expedientes con vínculo vigente (CU-10 gRPC), la atención clínica con notas
-        abiertas/cerradas (CU-03), estudios PDF (CU-04), receta farmacológica (CU-07) y cortes (CU-23).
+        <p>
+          <strong>Espacio Clínico activo (Oleadas 1 a 4 completas):</strong> revisa tus expedientes autorizados en{' '}
+          <Link to="/clinical/records" className="font-semibold underline">
+            Mis expedientes
+          </Link>
+          , retoma borradores en{' '}
+          <Link to="/clinical/open-notes" className="font-semibold underline">
+            Notas abiertas (CU-03)
+          </Link>{' '}
+          o revisa y confirma tus ingresos en{' '}
+          <Link to="/clinical/my-cuts" className="font-semibold underline">
+            Mis cortes (CU-23 / PC-05)
+          </Link>
+          .
+        </p>
       </section>
     </div>
   )

@@ -62,7 +62,6 @@ export function PlatformClinicsPage() {
   const [newUsesBilling, setNewUsesBilling] = useState(true)
   const [newAdminName, setNewAdminName] = useState('')
   const [newAdminEmail, setNewAdminEmail] = useState('')
-  const [newAdminPassword, setNewAdminPassword] = useState('Vital2026!')
   const [simulateIdentityFailure, setSimulateIdentityFailure] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const createNameRef = useRef<HTMLInputElement>(null)
@@ -113,7 +112,6 @@ export function PlatformClinicsPage() {
     setNewUsesBilling(true)
     setNewAdminName('')
     setNewAdminEmail('')
-    setNewAdminPassword('Vital2026!')
     setSimulateIdentityFailure(false)
     setCreateError(null)
     setModal({ type: 'create' })
@@ -153,7 +151,6 @@ export function PlatformClinicsPage() {
       usesBilling: newUsesBilling,
       initialAdminName: newAdminName,
       initialAdminEmail: newAdminEmail,
-      initialAdminPassword: newAdminPassword,
       simulateIdentityFailure,
     })
 
@@ -647,18 +644,11 @@ export function PlatformClinicsPage() {
                 />
               </div>
             </div>
-            <div className="mt-3">
-              <label htmlFor="new-admin-pass" className="block text-xs font-semibold text-ink">
-                Contraseña inicial ficticia
-              </label>
-              <input
-                id="new-admin-pass"
-                type="text"
-                value={newAdminPassword}
-                onChange={(e) => setNewAdminPassword(e.target.value)}
-                className="mt-1 w-full rounded-md border px-3 py-2 font-mono text-sm"
-              />
-            </div>
+            <p className="mt-2 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-ink-muted">
+              Frontera Platform-Identity: Platform envía únicamente nombre y correo en el RPC
+              idempotente <code className="font-mono">ProvisionInitialClinicAdmin</code>. Identity
+              gestiona credenciales y activación sin exponer contraseñas a Platform.
+            </p>
 
             <label className="mt-3 flex items-start gap-2.5 rounded-md border border-amber-300 bg-warning-bg p-2.5 text-xs text-warning-ink">
               <input
@@ -715,11 +705,14 @@ export function PlatformClinicsPage() {
                 <span className="font-semibold text-ink">{modal.tenant.initialAdminName}</span> (
                 <span className="font-mono">{modal.tenant.initialAdminEmail}</span>)
               </p>
+              <p className="mt-1 font-mono text-xs text-ink-muted">
+                provisioningRequestId: {modal.tenant.provisioningRequestId}
+              </p>
             </div>
             <p className="text-ink-muted">
-              Al completar este paso se creará la cuenta inicial de AdminClinica con contraseña demo{' '}
-              <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs">Vital2026!</code>{' '}
-              y la clínica pasará a estado <strong>ACTIVA</strong>.
+              Reintenta <code className="font-mono">ProvisionInitialClinicAdmin</code> con la misma
+              clave idempotente. Identity habilitará la cuenta sin duplicados ni devolver secretos,
+              pasando la clínica a estado <strong>ACTIVA</strong>.
             </p>
             <div className="flex flex-wrap justify-end gap-3 border-t border-divider pt-4">
               <button
@@ -753,7 +746,7 @@ export function PlatformClinicsPage() {
         onClose={() => setModal(null)}
       >
         {modal?.type === 'toggleStatus' ? (
-          <form onSubmit={handleToggleStatusSubmit} className="space-y-4 text-sm">
+          <form onSubmit={handleToggleStatusSubmit} noValidate className="space-y-4 text-sm">
             <div className="rounded-md border border-divider bg-slate-50 p-3.5">
               <p className="font-semibold text-ink">{modal.tenant.name}</p>
               <p className="mt-1 text-xs text-ink-muted">
@@ -770,15 +763,30 @@ export function PlatformClinicsPage() {
 
             <div>
               <label htmlFor="status-change-reason" className="block text-sm font-semibold text-ink">
-                Motivo administrativo (opcional en prototipo, recomendado)
+                {modal.targetStatus === 'SUSPENDIDA' ? (
+                  <>
+                    Motivo administrativo de suspensión <span aria-hidden="true">*</span>
+                  </>
+                ) : (
+                  'Motivo de reactivación (opcional)'
+                )}
               </label>
               <textarea
                 id="status-change-reason"
                 rows={3}
                 value={statusReason}
-                onChange={(e) => setStatusReason(e.target.value)}
+                onChange={(e) => {
+                  setStatusReason(e.target.value)
+                  if (statusError) setStatusError(null)
+                }}
+                required={modal.targetStatus === 'SUSPENDIDA'}
+                aria-invalid={Boolean(statusError)}
                 className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-                placeholder="Ej. Falta de renovación simulada del plan SaaS."
+                placeholder={
+                  modal.targetStatus === 'SUSPENDIDA'
+                    ? 'Ej. Falta de renovación simulada del plan SaaS.'
+                    : 'Ej. Renovación confirmada y cuenta al corriente.'
+                }
               />
             </div>
 

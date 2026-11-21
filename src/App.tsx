@@ -1,6 +1,20 @@
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router'
 import { ClinicLoginPage } from './features/auth/ClinicLoginPage.tsx'
 import { PlatformLoginPage } from './features/auth/PlatformLoginPage.tsx'
+import { BillingHubPage } from './features/billing-bi/BillingHubPage.tsx'
+import { ClinicBiPage } from './features/billing-bi/ClinicBiPage.tsx'
+import { PlatformBiPage } from './features/billing-bi/PlatformBiPage.tsx'
+import { SpecialistCutsPage } from './features/billing-bi/SpecialistCutsPage.tsx'
+import { AppointmentsPage } from './features/clinical-care/AppointmentsPage.tsx'
+import { EncounterWorkspacePage } from './features/clinical-care/EncounterWorkspacePage.tsx'
+import { OpenNotesPage } from './features/clinical-care/OpenNotesPage.tsx'
+import { PatientTriagePage } from './features/clinical-care/PatientTriagePage.tsx'
+import { AdminPatientsPage } from './features/patients-access/AdminPatientsPage.tsx'
+import { ClinicalRecordSpacePage } from './features/patients-access/ClinicalRecordSpacePage.tsx'
+import { ClinicalRecordsListPage } from './features/patients-access/ClinicalRecordsListPage.tsx'
+import { ExceptionalAccessPage } from './features/patients-access/ExceptionalAccessPage.tsx'
+import { PatientAdminDetailPage } from './features/patients-access/PatientAdminDetailPage.tsx'
+import { PatientCreatePage } from './features/patients-access/PatientCreatePage.tsx'
 import { AdminPlanPage } from './features/tenants-staff/AdminPlanPage.tsx'
 import { AdminStaffPage } from './features/tenants-staff/AdminStaffPage.tsx'
 import { PlatformClinicsPage } from './features/tenants-staff/PlatformClinicsPage.tsx'
@@ -21,6 +35,22 @@ function HomeRedirect() {
     return <Navigate to="/login" replace />
   }
   return <Navigate to={defaultRouteForRole(currentUser.role)} replace />
+}
+
+function PatientCreateLayoutWrapper() {
+  const { currentUser } = useMockStore()
+  if (currentUser?.role === 'ESPECIALISTA') {
+    return (
+      <ClinicalLayout>
+        <PatientCreatePage />
+      </ClinicalLayout>
+    )
+  }
+  return (
+    <AdminClinicLayout>
+      <PatientCreatePage />
+    </AdminClinicLayout>
+  )
 }
 
 function NotFoundPage() {
@@ -67,6 +97,59 @@ function App() {
           />
 
           <Route
+            path="/platform/bi"
+            element={
+              <RouteGuard scope="PLATFORM">
+                <PlatformLayout>
+                  <PlatformBiPage />
+                </PlatformLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/patients"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN_OR_AUX">
+                <AdminClinicLayout>
+                  <AdminPatientsPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/patients/new"
+            element={
+              <RouteGuard scope="CLINIC_PATIENT_REGISTER">
+                <PatientCreateLayoutWrapper />
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/patients/:id"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN_OR_AUX">
+                <AdminClinicLayout>
+                  <PatientAdminDetailPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/exceptional-access"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN_OR_AUX">
+                <AdminClinicLayout>
+                  <ExceptionalAccessPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
             path="/admin/staff"
             element={
               <RouteGuard scope="CLINIC_ADMIN">
@@ -89,6 +172,28 @@ function App() {
           />
 
           <Route
+            path="/admin/billing"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN_OR_AUX">
+                <AdminClinicLayout>
+                  <BillingHubPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/bi"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN">
+                <AdminClinicLayout>
+                  <ClinicBiPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
             path="/admin/workspace"
             element={
               <RouteGuard scope="CLINIC_AUXILIAR">
@@ -100,11 +205,99 @@ function App() {
           />
 
           <Route
+            path="/admin/appointments"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN_OR_AUX">
+                <AdminClinicLayout>
+                  <AppointmentsPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/admin/patients/:id/triage"
+            element={
+              <RouteGuard scope="CLINIC_AUXILIAR">
+                <AdminClinicLayout>
+                  <PatientTriagePage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/records"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <ClinicalRecordsListPage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/open-notes"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <OpenNotesPage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/records/:id"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <ClinicalRecordSpacePage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/records/:id/encounters/new"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <EncounterWorkspacePage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/records/:id/encounters/:encounterId"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <EncounterWorkspacePage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
             path="/clinical/workspace"
             element={
               <RouteGuard scope="CLINIC_CLINICAL">
                 <ClinicalLayout>
                   <ClinicalWorkspacePage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/my-cuts"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <SpecialistCutsPage />
                 </ClinicalLayout>
               </RouteGuard>
             }

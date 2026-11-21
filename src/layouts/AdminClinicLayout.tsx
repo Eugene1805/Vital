@@ -9,10 +9,21 @@ export function AdminClinicLayout({ children }: { children: ReactNode }) {
   const navItems =
     currentUser?.role === 'ADMIN_CLINICA'
       ? [
+          { to: '/admin/patients', label: 'Pacientes' },
+          { to: '/admin/appointments', label: 'Agenda' },
+          { to: '/admin/exceptional-access', label: 'Accesos excepcionales' },
           { to: '/admin/staff', label: 'Personal y roles' },
+          { to: '/admin/billing', label: 'Billing y cortes' },
+          { to: '/admin/bi', label: 'Indicadores BI' },
           { to: '/admin/plan', label: 'Plan y vigencia' },
         ]
-      : [{ to: '/admin/workspace', label: 'Mi ámbito auxiliar' }]
+      : [
+          { to: '/admin/patients', label: 'Pacientes' },
+          { to: '/admin/appointments', label: 'Agenda' },
+          { to: '/admin/exceptional-access', label: 'Acceso excepcional' },
+          { to: '/admin/billing', label: 'Billing y cortes' },
+          { to: '/admin/workspace', label: 'Mi ámbito' },
+        ]
 
   return (
     <AppShell

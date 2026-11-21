@@ -13,6 +13,7 @@ import {
   canUpdateAuxiliaryLinks,
   canUpdateStaffRoleAndPermissions,
   evaluateRouteAccess,
+  getTenantAccessState,
 } from './policy.ts'
 
 function expectDenied(decision: PolicyDecision, expectedCode: string): void {
@@ -54,8 +55,16 @@ describe('Políticas de Oleada 1 (CU-10 a CU-17)', () => {
       'INVALID_STATE_PENDING_ADMIN',
     )
 
-    assert.equal(canChangeClinicStatus(superAdmin, tenantNorte, 'SUSPENDIDA').allowed, true)
-    assert.equal(canChangeClinicStatus(superAdmin, tenantValle, 'ACTIVA').allowed, true)
+    assert.equal(canChangeClinicStatus(superAdmin, tenantNorte, 'SUSPENDIDA', '').allowed, false)
+    expectDenied(
+      canChangeClinicStatus(superAdmin, tenantNorte, 'SUSPENDIDA', ''),
+      'REASON_REQUIRED',
+    )
+    assert.equal(
+      canChangeClinicStatus(superAdmin, tenantNorte, 'SUSPENDIDA', 'Falta de renovación').allowed,
+      true,
+    )
+    assert.equal(canChangeClinicStatus(superAdmin, tenantValle, 'ACTIVA', '').allowed, true)
   })
 
   it('CU-14: impide que AdminClinica conceda SuperAdmin o habilite prescripción sin atribución', () => {
@@ -101,5 +110,23 @@ describe('Políticas de Oleada 1 (CU-10 a CU-17)', () => {
     assert.equal(evaluateRouteAccess(auxNorte, tenantNorte, 'CLINIC_CLINICAL').allowed, false)
     assert.equal(evaluateRouteAccess(mendozaNorte, tenantNorte, 'CLINIC_ADMIN').allowed, false)
     assert.equal(evaluateRouteAccess(mendozaNorte, tenantNorte, 'CLINIC_CLINICAL').allowed, true)
+  })
+
+  it('Contrato Platform-Identity GetTenantAccessState: expone solo estado calculado sin PII', () => {
+    const activeState = getTenantAccessState('tenant-norte', INITIAL_TENANTS, '2026-11-19T16:30:00-06:00')
+    assert.deepEqual(activeState, {
+      tenantId: 'tenant-norte',
+      state: 'ACTIVA',
+      mayAuthenticate: true,
+      evaluatedAtGmt6: '2026-11-19T16:30:00-06:00',
+    })
+
+    const suspendedState = getTenantAccessState('tenant-valle', INITIAL_TENANTS, '2026-11-19T16:30:00-06:00')
+    assert.equal(suspendedState?.mayAuthenticate, false)
+
+    const pendingState = getTenantAccessState('tenant-aurora', INITIAL_TENANTS, '2026-11-19T16:30:00-06:00')
+    assert.equal(pendingState?.mayAuthenticate, false)
+
+    assert.equal(getTenantAccessState('no-existe', INITIAL_TENANTS, '2026-11-19T16:30:00-06:00'), null)
   })
 })

@@ -1,3 +1,4 @@
+import { Link } from 'react-router'
 import { StatusBadge } from '../../design-system/StatusBadge.tsx'
 import { useMockStore } from '../../mocks/useMockStore.ts'
 
@@ -86,9 +87,25 @@ export function AuxiliaryWorkspacePage() {
       </section>
 
       <section className="rounded-lg border border-blue-300 bg-info-bg p-4 text-sm text-info-ink">
-        <strong>Siguiente etapa del prototipo (Oleadas 2 a 4):</strong> aquí se integrarán las
-        fichas administrativas de pacientes, solicitudes de acceso excepcional, agenda interna,
-        preparación preliminar (CU-19) y cargos/cortes de Billing.
+        <p>
+          <strong>Operación disponible:</strong> gestiona la{' '}
+          <Link to="/admin/appointments" className="font-semibold underline">
+            Agenda clínica (CU-18)
+          </Link>
+          , consulta tu listado acotado y captura preparaciones preliminares (CU-19) en{' '}
+          <Link to="/admin/patients" className="font-semibold underline">
+            Pacientes
+          </Link>
+          , opera{' '}
+          <Link to="/admin/billing" className="font-semibold underline">
+            Billing y cortes (CU-20 a CU-22)
+          </Link>{' '}
+          o solicita permisos temporales en{' '}
+          <Link to="/admin/exceptional-access" className="font-semibold underline">
+            Acceso excepcional
+          </Link>
+          . Las 4 oleadas del prototipo frontend están habilitadas.
+        </p>
       </section>
     </div>
   )

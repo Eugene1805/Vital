@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:policy": "node --test src/guards/policy.test.ts",
+    "test:policy": "node --test src/guards/policy.test.ts src/guards/objectAccess.test.ts src/guards/clinicalFlow.test.ts src/guards/billingBi.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
