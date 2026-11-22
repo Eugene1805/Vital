@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:policy": "node --test src/guards/policy.test.ts src/guards/objectAccess.test.ts src/guards/clinicalFlow.test.ts src/guards/billingBi.test.ts",
+    "test:services": "node --test src/services/identityClient.test.ts src/services/agendaClient.test.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {
