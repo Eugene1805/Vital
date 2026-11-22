@@ -9,6 +9,7 @@ import { AppointmentsPage } from './features/clinical-care/AppointmentsPage.tsx'
 import { EncounterWorkspacePage } from './features/clinical-care/EncounterWorkspacePage.tsx'
 import { OpenNotesPage } from './features/clinical-care/OpenNotesPage.tsx'
 import { PatientTriagePage } from './features/clinical-care/PatientTriagePage.tsx'
+import { SchedulesPage } from './features/clinical-care/SchedulesPage.tsx'
 import { AdminPatientsPage } from './features/patients-access/AdminPatientsPage.tsx'
 import { ClinicalRecordSpacePage } from './features/patients-access/ClinicalRecordSpacePage.tsx'
 import { ClinicalRecordsListPage } from './features/patients-access/ClinicalRecordsListPage.tsx'
@@ -216,6 +217,17 @@ function App() {
           />
 
           <Route
+            path="/admin/schedules"
+            element={
+              <RouteGuard scope="CLINIC_ADMIN">
+                <AdminClinicLayout>
+                  <SchedulesPage />
+                </AdminClinicLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
             path="/admin/patients/:id/triage"
             element={
               <RouteGuard scope="CLINIC_AUXILIAR">
@@ -298,6 +310,17 @@ function App() {
               <RouteGuard scope="CLINIC_CLINICAL">
                 <ClinicalLayout>
                   <SpecialistCutsPage />
+                </ClinicalLayout>
+              </RouteGuard>
+            }
+          />
+
+          <Route
+            path="/clinical/schedule"
+            element={
+              <RouteGuard scope="CLINIC_CLINICAL">
+                <ClinicalLayout>
+                  <SchedulesPage />
                 </ClinicalLayout>
               </RouteGuard>
             }

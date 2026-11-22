@@ -13,6 +13,7 @@ export function ClinicalLayout({ children }: { children: ReactNode }) {
   const navItems = [
     { to: '/clinical/records', label: 'Mis expedientes' },
     { to: '/clinical/open-notes', label: 'Notas abiertas' },
+    { to: '/clinical/schedule', label: 'Mi horario' },
     { to: '/clinical/my-cuts', label: 'Mis cortes' },
     { to: '/clinical/workspace', label: 'Espacio clínico' },
   ]

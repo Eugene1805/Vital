@@ -4,6 +4,7 @@ import type {
   ClinicalHistoryEntry,
   ClinicalRecord,
   ClinicalStudyDocument,
+  ClinicScheduleConfig,
   ClinicTenant,
   EncounterChargeSheet,
   ExceptionalAccessGrant,
@@ -13,6 +14,8 @@ import type {
   PreliminaryPreparation,
   Prescription,
   SpecialistCut,
+  SpecialistScheduleConfig,
+  SpecialistScheduleException,
   StaffAccount,
 } from '../domain/types.ts'
 
@@ -962,3 +965,59 @@ export const INITIAL_CUTS: SpecialistCut[] = [
     ],
   },
 ]
+
+export const INITIAL_CLINIC_SCHEDULES: ClinicScheduleConfig[] = [
+  {
+    tenantId: 'tenant-norte',
+    configured: true,
+    slots: [
+      { dayOfWeek: 'MONDAY', startTime: '08:00', endTime: '20:00' },
+      { dayOfWeek: 'TUESDAY', startTime: '08:00', endTime: '20:00' },
+      { dayOfWeek: 'WEDNESDAY', startTime: '08:00', endTime: '20:00' },
+      { dayOfWeek: 'THURSDAY', startTime: '08:00', endTime: '20:00' },
+      { dayOfWeek: 'FRIDAY', startTime: '08:00', endTime: '20:00' },
+      { dayOfWeek: 'SATURDAY', startTime: '09:00', endTime: '14:00' },
+    ],
+    updatedByName: 'Lic. Mariana Paredes',
+    updatedAtGmt6: '2026-11-10T09:10:00-06:00',
+  },
+]
+
+export const INITIAL_SPECIALIST_SCHEDULES: SpecialistScheduleConfig[] = [
+  {
+    tenantId: 'tenant-norte',
+    specialistId: 'acc-norte-mendoza',
+    useClinicFallback: false,
+    ownSlots: [
+      { dayOfWeek: 'MONDAY', startTime: '09:00', endTime: '15:00' },
+      { dayOfWeek: 'MONDAY', startTime: '16:00', endTime: '19:00' },
+      { dayOfWeek: 'TUESDAY', startTime: '09:00', endTime: '15:00' },
+      { dayOfWeek: 'TUESDAY', startTime: '16:00', endTime: '19:00' },
+      { dayOfWeek: 'WEDNESDAY', startTime: '09:00', endTime: '15:00' },
+      { dayOfWeek: 'WEDNESDAY', startTime: '16:00', endTime: '19:00' },
+      { dayOfWeek: 'THURSDAY', startTime: '09:00', endTime: '15:00' },
+      { dayOfWeek: 'THURSDAY', startTime: '16:00', endTime: '19:00' },
+      { dayOfWeek: 'FRIDAY', startTime: '09:00', endTime: '15:00' },
+      { dayOfWeek: 'FRIDAY', startTime: '16:00', endTime: '19:00' },
+    ],
+    updatedByName: 'Lic. Mariana Paredes',
+    updatedAtGmt6: '2026-11-10T09:40:00-06:00',
+  },
+  {
+    tenantId: 'tenant-norte',
+    specialistId: 'acc-norte-salazar',
+    useClinicFallback: false,
+    ownSlots: [
+      { dayOfWeek: 'MONDAY', startTime: '08:00', endTime: '16:00' },
+      { dayOfWeek: 'TUESDAY', startTime: '08:00', endTime: '16:00' },
+      { dayOfWeek: 'WEDNESDAY', startTime: '08:00', endTime: '16:00' },
+      { dayOfWeek: 'THURSDAY', startTime: '08:00', endTime: '16:00' },
+      { dayOfWeek: 'FRIDAY', startTime: '08:00', endTime: '16:00' },
+      { dayOfWeek: 'SATURDAY', startTime: '08:00', endTime: '16:00' },
+    ],
+    updatedByName: 'Lic. Mariana Paredes',
+    updatedAtGmt6: '2026-11-11T10:30:00-06:00',
+  },
+]
+
+export const INITIAL_SCHEDULE_EXCEPTIONS: SpecialistScheduleException[] = []

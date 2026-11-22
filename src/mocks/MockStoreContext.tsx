@@ -15,11 +15,13 @@ import {
   type IdentityStaffDirectoryResponse,
   type IdentityTenantSummaryDto,
 } from '../services/identityClient.ts'
+import { getAgendaApiUrl } from '../services/agendaClient.ts'
 import type {
   Appointment,
   AppointmentStatus,
   AssignableClinicRole,
   ChargeLineItem,
+  ClinicScheduleConfig,
   ClinicalEncounter,
   ClinicalHistoryCategory,
   ClinicalHistoryEntry,
@@ -42,8 +44,12 @@ import type {
   PreliminaryVitals,
   Prescription,
   PrescriptionItem,
+  SchedulePolicyDecision,
+  ScheduleTimeSlot,
   SessionState,
   SpecialistCut,
+  SpecialistScheduleConfig,
+  SpecialistScheduleException,
   StaffAccount,
   StaffPermissions,
 } from '../domain/types.ts'
@@ -90,9 +96,17 @@ import {
   canUpdateStaffRoleAndPermissions,
 } from '../guards/policy.ts'
 import {
+  computeMockAvailability,
+  resolveEffectiveDayScheduleMock,
+  validateAppointmentFitsScheduleMock,
+  validateScheduleChangeAgainstAppointmentsMock,
+  validateWeeklySlotsMock,
+} from '../guards/scheduleMock.ts'
+import {
   INITIAL_ACCOUNTS,
   INITIAL_APPOINTMENTS,
   INITIAL_CHARGE_SHEETS,
+  INITIAL_CLINIC_SCHEDULES,
   INITIAL_CUTS,
   INITIAL_ENCOUNTERS,
   INITIAL_GRANTS,
@@ -102,6 +116,8 @@ import {
   INITIAL_PREPARATIONS,
   INITIAL_PRESCRIPTIONS,
   INITIAL_RECORDS,
+  INITIAL_SCHEDULE_EXCEPTIONS,
+  INITIAL_SPECIALIST_SCHEDULES,
   INITIAL_STUDIES,
   INITIAL_TENANTS,
   PLAN_CATALOG,
@@ -116,6 +132,9 @@ interface StoreSnapshot {
   records: ClinicalRecord[]
   grants: ExceptionalAccessGrant[]
   appointments: Appointment[]
+  clinicSchedules: ClinicScheduleConfig[]
+  specialistSchedules: SpecialistScheduleConfig[]
+  scheduleExceptions: SpecialistScheduleException[]
   preparations: PreliminaryPreparation[]
   encounters: ClinicalEncounter[]
   historyEntries: ClinicalHistoryEntry[]
@@ -253,6 +272,10 @@ export interface MockStoreContextValue {
   records: ClinicalRecord[]
   grants: ExceptionalAccessGrant[]
   appointments: Appointment[]
+  clinicSchedules: ClinicScheduleConfig[]
+  specialistSchedules: SpecialistScheduleConfig[]
+  scheduleExceptions: SpecialistScheduleException[]
+  agendaApiUrl: string
   preparations: PreliminaryPreparation[]
   encounters: ClinicalEncounter[]
   historyEntries: ClinicalHistoryEntry[]
@@ -319,6 +342,29 @@ export interface MockStoreContextValue {
     appointmentId: string,
     nextStatus: AppointmentStatus,
   ) => PolicyDecision
+  updateClinicSchedule: (slots: ScheduleTimeSlot[]) => SchedulePolicyDecision
+  updateSpecialistSchedule: (
+    specialistId: string,
+    useClinicFallback: boolean,
+    slots: ScheduleTimeSlot[],
+  ) => SchedulePolicyDecision
+  upsertSpecialistException: (input: {
+    specialistId: string
+    dateGmt6: string
+    isUnavailable: boolean
+    customStartTime: string | null
+    customEndTime: string | null
+    reason: string
+  }) => SchedulePolicyDecision
+  deleteSpecialistException: (
+    specialistId: string,
+    exceptionId: string,
+  ) => SchedulePolicyDecision
+  getMockSpecialistAvailability: (
+    specialistId: string,
+    dateGmt6: string,
+    durationMinutes?: number,
+  ) => ReturnType<typeof computeMockAvailability> | null
   createPreparation: (input: SavePreparationInput) => PolicyDecision
   updatePreparation: (preparationId: string, input: SavePreparationInput) => PolicyDecision
   appendPreparationAddendum: (
@@ -440,6 +486,15 @@ function loadInitialSnapshot(): StoreSnapshot {
           records: parsed.records,
           grants: parsed.grants,
           appointments: parsed.appointments,
+          clinicSchedules: Array.isArray(parsed.clinicSchedules)
+            ? parsed.clinicSchedules
+            : INITIAL_CLINIC_SCHEDULES,
+          specialistSchedules: Array.isArray(parsed.specialistSchedules)
+            ? parsed.specialistSchedules
+            : INITIAL_SPECIALIST_SCHEDULES,
+          scheduleExceptions: Array.isArray(parsed.scheduleExceptions)
+            ? parsed.scheduleExceptions
+            : INITIAL_SCHEDULE_EXCEPTIONS,
           preparations: parsed.preparations,
           encounters: parsed.encounters,
           historyEntries: parsed.historyEntries,
@@ -462,6 +517,9 @@ function loadInitialSnapshot(): StoreSnapshot {
     records: INITIAL_RECORDS,
     grants: INITIAL_GRANTS,
     appointments: INITIAL_APPOINTMENTS,
+    clinicSchedules: INITIAL_CLINIC_SCHEDULES,
+    specialistSchedules: INITIAL_SPECIALIST_SCHEDULES,
+    scheduleExceptions: INITIAL_SCHEDULE_EXCEPTIONS,
     preparations: INITIAL_PREPARATIONS,
     encounters: INITIAL_ENCOUNTERS,
     historyEntries: INITIAL_HISTORY_ENTRIES,
@@ -497,6 +555,7 @@ const KNOWN_SEEDED_TENANT_SLUGS: Record<string, string> = {
 export function MockStoreProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<StoreSnapshot>(loadInitialSnapshot)
   const identityApiUrl = getIdentityApiUrl()
+  const agendaApiUrl = getAgendaApiUrl()
   const [identityClient] = useState(() => createIdentityClient(identityApiUrl))
   const [authMode, setAuthModeState] = useState<IdentityAuthMode>(getInitialAuthMode)
   const [identityProfile, setIdentityProfile] = useState<IdentityAccountProfileDto | null>(null)
@@ -1846,6 +1905,21 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
       return decision
     }
 
+    const effectiveDay = resolveEffectiveDayScheduleMock(
+      input.scheduledStartGmt6.slice(0, 10),
+      specialist.id,
+      currentTenant.id,
+      snapshot.specialistSchedules,
+      snapshot.clinicSchedules,
+      snapshot.scheduleExceptions,
+    )
+    const fitsCheck = validateAppointmentFitsScheduleMock(
+      input.scheduledStartGmt6,
+      input.durationMinutes,
+      effectiveDay,
+    )
+    if (!fitsCheck.allowed) return fitsCheck
+
     const newApt: Appointment = {
       id: makeId('apt'),
       tenantId: currentTenant.id,
@@ -1895,7 +1969,22 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
       nowIso,
       apt.id,
     )
-    if (!decision.allowed) return decision
+    if (!decision.allowed || !currentTenant) return decision
+
+    const effectiveDay = resolveEffectiveDayScheduleMock(
+      scheduledStartGmt6.slice(0, 10),
+      apt.specialistId,
+      currentTenant.id,
+      snapshot.specialistSchedules,
+      snapshot.clinicSchedules,
+      snapshot.scheduleExceptions,
+    )
+    const fitsCheck = validateAppointmentFitsScheduleMock(
+      scheduledStartGmt6,
+      durationMinutes,
+      effectiveDay,
+    )
+    if (!fitsCheck.allowed) return fitsCheck
 
     setSnapshot((prev) => ({
       ...prev,
@@ -1934,6 +2023,290 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
       ),
     }))
     return { allowed: true }
+  }
+
+  const updateClinicSchedule = (slots: ScheduleTimeSlot[]): SchedulePolicyDecision => {
+    if (!currentUser || !currentTenant || currentUser.role !== 'ADMIN_CLINICA') {
+      return {
+        allowed: false,
+        code: 'FORBIDDEN_SCHEDULE_ROLE',
+        message: 'Solo AdminClinica edita el horario general de la clínica.',
+      }
+    }
+    const validation = validateWeeklySlotsMock(slots)
+    if (!validation.allowed) return validation
+
+    const candidateClinic: ClinicScheduleConfig = {
+      tenantId: currentTenant.id,
+      configured: true,
+      slots,
+      updatedByName: currentUser.fullName,
+      updatedAtGmt6: nowGmt6Iso(),
+    }
+    const otherClinicSchedules = snapshot.clinicSchedules.filter(
+      (c) => c.tenantId !== currentTenant.id,
+    )
+    const customSpecIds = new Set(
+      snapshot.specialistSchedules
+        .filter((s) => s.tenantId === currentTenant.id && !s.useClinicFallback)
+        .map((s) => s.specialistId),
+    )
+    const affectedApts = snapshot.appointments.filter(
+      (a) => a.tenantId === currentTenant.id && !customSpecIds.has(a.specialistId),
+    )
+    const conflictCheck = validateScheduleChangeAgainstAppointmentsMock(
+      affectedApts,
+      (apt, dateGmt6) =>
+        resolveEffectiveDayScheduleMock(
+          dateGmt6,
+          apt.specialistId,
+          currentTenant.id,
+          [],
+          [...otherClinicSchedules, candidateClinic],
+          snapshot.scheduleExceptions,
+        ),
+    )
+    if (!conflictCheck.allowed) return conflictCheck
+
+    setSnapshot((prev) => ({
+      ...prev,
+      clinicSchedules: [...otherClinicSchedules, candidateClinic],
+    }))
+    return { allowed: true }
+  }
+
+  const updateSpecialistSchedule = (
+    specialistId: string,
+    useClinicFallback: boolean,
+    slots: ScheduleTimeSlot[],
+  ): SchedulePolicyDecision => {
+    if (!currentUser || !currentTenant) {
+      return { allowed: false, code: 'UNAUTHENTICATED', message: 'Sesión requerida.' }
+    }
+    if (
+      currentUser.role !== 'ADMIN_CLINICA' &&
+      !(currentUser.role === 'ESPECIALISTA' && currentUser.id === specialistId)
+    ) {
+      return {
+        allowed: false,
+        code: 'FORBIDDEN_SCHEDULE_SCOPE',
+        message: 'Solo AdminClinica o el propio especialista editan este horario.',
+      }
+    }
+
+    if (!useClinicFallback) {
+      const validation = validateWeeklySlotsMock(slots)
+      if (!validation.allowed) return validation
+    }
+
+    const candidateSpec: SpecialistScheduleConfig = {
+      tenantId: currentTenant.id,
+      specialistId,
+      useClinicFallback,
+      ownSlots: useClinicFallback ? [] : slots,
+      updatedByName: currentUser.fullName,
+      updatedAtGmt6: nowGmt6Iso(),
+    }
+    const others = snapshot.specialistSchedules.filter(
+      (s) => !(s.tenantId === currentTenant.id && s.specialistId === specialistId),
+    )
+    const specApts = snapshot.appointments.filter(
+      (a) => a.tenantId === currentTenant.id && a.specialistId === specialistId,
+    )
+    const conflictCheck = validateScheduleChangeAgainstAppointmentsMock(
+      specApts,
+      (_, dateGmt6) =>
+        resolveEffectiveDayScheduleMock(
+          dateGmt6,
+          specialistId,
+          currentTenant.id,
+          [...others, candidateSpec],
+          snapshot.clinicSchedules,
+          snapshot.scheduleExceptions,
+        ),
+    )
+    if (!conflictCheck.allowed) return conflictCheck
+
+    setSnapshot((prev) => ({
+      ...prev,
+      specialistSchedules: [...others, candidateSpec],
+    }))
+    return { allowed: true }
+  }
+
+  const upsertSpecialistException = (input: {
+    specialistId: string
+    dateGmt6: string
+    isUnavailable: boolean
+    customStartTime: string | null
+    customEndTime: string | null
+    reason: string
+  }): SchedulePolicyDecision => {
+    if (!currentUser || !currentTenant) {
+      return { allowed: false, code: 'UNAUTHENTICATED', message: 'Sesión requerida.' }
+    }
+    if (
+      currentUser.role !== 'ADMIN_CLINICA' &&
+      !(currentUser.role === 'ESPECIALISTA' && currentUser.id === input.specialistId)
+    ) {
+      return {
+        allowed: false,
+        code: 'FORBIDDEN_SCHEDULE_SCOPE',
+        message: 'Solo AdminClinica o el propio especialista registran excepciones.',
+      }
+    }
+    if (!input.reason.trim()) {
+      return {
+        allowed: false,
+        code: 'INVALID_SCHEDULE_EXCEPTION',
+        message: 'El motivo de la excepción es obligatorio.',
+      }
+    }
+    const nowIso = nowGmt6Iso()
+    if (input.dateGmt6 < nowIso.slice(0, 10)) {
+      return {
+        allowed: false,
+        code: 'PAST_SCHEDULE_NOT_ALLOWED',
+        message: 'No se permiten excepciones en fechas pasadas (GMT-6).',
+      }
+    }
+    if (!input.isUnavailable) {
+      if (
+        !input.customStartTime ||
+        !input.customEndTime ||
+        input.customEndTime <= input.customStartTime
+      ) {
+        return {
+          allowed: false,
+          code: 'INVALID_SCHEDULE_BLOCK',
+          message: 'Indica hora de inicio y fin válidas para la jornada especial.',
+        }
+      }
+    }
+
+    const existing = snapshot.scheduleExceptions.find(
+      (e) =>
+        e.tenantId === currentTenant.id &&
+        e.specialistId === input.specialistId &&
+        e.dateGmt6 === input.dateGmt6,
+    )
+    const nextException: SpecialistScheduleException = {
+      id: existing?.id ?? makeId('ex'),
+      tenantId: currentTenant.id,
+      specialistId: input.specialistId,
+      dateGmt6: input.dateGmt6,
+      isUnavailable: input.isUnavailable,
+      customStartTime: input.isUnavailable ? null : input.customStartTime,
+      customEndTime: input.isUnavailable ? null : input.customEndTime,
+      reason: input.reason.trim(),
+      createdByName: currentUser.fullName,
+      updatedAtGmt6: nowIso,
+    }
+    const others = snapshot.scheduleExceptions.filter(
+      (e) =>
+        !(
+          e.tenantId === currentTenant.id &&
+          e.specialistId === input.specialistId &&
+          e.dateGmt6 === input.dateGmt6
+        ),
+    )
+    const dayApts = snapshot.appointments.filter(
+      (a) =>
+        a.tenantId === currentTenant.id &&
+        a.specialistId === input.specialistId &&
+        a.scheduledStartGmt6.slice(0, 10) === input.dateGmt6,
+    )
+    const conflictCheck = validateScheduleChangeAgainstAppointmentsMock(
+      dayApts,
+      (_, dateGmt6) =>
+        resolveEffectiveDayScheduleMock(
+          dateGmt6,
+          input.specialistId,
+          currentTenant.id,
+          snapshot.specialistSchedules,
+          snapshot.clinicSchedules,
+          [...others, nextException],
+        ),
+    )
+    if (!conflictCheck.allowed) return conflictCheck
+
+    setSnapshot((prev) => ({
+      ...prev,
+      scheduleExceptions: [...others, nextException],
+    }))
+    return { allowed: true }
+  }
+
+  const deleteSpecialistException = (
+    specialistId: string,
+    exceptionId: string,
+  ): SchedulePolicyDecision => {
+    if (!currentUser || !currentTenant) {
+      return { allowed: false, code: 'UNAUTHENTICATED', message: 'Sesión requerida.' }
+    }
+    if (
+      currentUser.role !== 'ADMIN_CLINICA' &&
+      !(currentUser.role === 'ESPECIALISTA' && currentUser.id === specialistId)
+    ) {
+      return {
+        allowed: false,
+        code: 'FORBIDDEN_SCHEDULE_SCOPE',
+        message: 'Solo AdminClinica o el propio especialista eliminan excepciones.',
+      }
+    }
+    const target = snapshot.scheduleExceptions.find(
+      (e) =>
+        e.id === exceptionId &&
+        e.tenantId === currentTenant.id &&
+        e.specialistId === specialistId,
+    )
+    if (!target) {
+      return { allowed: false, code: 'NOT_FOUND', message: 'Excepción no encontrada.' }
+    }
+    const remaining = snapshot.scheduleExceptions.filter((e) => e.id !== exceptionId)
+    const dayApts = snapshot.appointments.filter(
+      (a) =>
+        a.tenantId === currentTenant.id &&
+        a.specialistId === specialistId &&
+        a.scheduledStartGmt6.slice(0, 10) === target.dateGmt6,
+    )
+    const conflictCheck = validateScheduleChangeAgainstAppointmentsMock(
+      dayApts,
+      (_, dateGmt6) =>
+        resolveEffectiveDayScheduleMock(
+          dateGmt6,
+          specialistId,
+          currentTenant.id,
+          snapshot.specialistSchedules,
+          snapshot.clinicSchedules,
+          remaining,
+        ),
+    )
+    if (!conflictCheck.allowed) return conflictCheck
+
+    setSnapshot((prev) => ({
+      ...prev,
+      scheduleExceptions: remaining,
+    }))
+    return { allowed: true }
+  }
+
+  const getMockSpecialistAvailability = (
+    specialistId: string,
+    dateGmt6: string,
+    durationMinutes = 30,
+  ) => {
+    if (!currentTenant) return null
+    return computeMockAvailability(
+      dateGmt6,
+      specialistId,
+      currentTenant.id,
+      durationMinutes,
+      snapshot.clinicSchedules,
+      snapshot.specialistSchedules,
+      snapshot.scheduleExceptions,
+      snapshot.appointments,
+    )
   }
 
   const createPreparation = (input: SavePreparationInput): PolicyDecision => {
@@ -3131,6 +3504,9 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
       records: INITIAL_RECORDS,
       grants: INITIAL_GRANTS,
       appointments: INITIAL_APPOINTMENTS,
+      clinicSchedules: INITIAL_CLINIC_SCHEDULES,
+      specialistSchedules: INITIAL_SPECIALIST_SCHEDULES,
+      scheduleExceptions: INITIAL_SCHEDULE_EXCEPTIONS,
       preparations: INITIAL_PREPARATIONS,
       encounters: INITIAL_ENCOUNTERS,
       historyEntries: INITIAL_HISTORY_ENTRIES,
@@ -3158,6 +3534,10 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
         records: snapshot.records,
         grants: snapshot.grants,
         appointments: snapshot.appointments,
+        clinicSchedules: snapshot.clinicSchedules,
+        specialistSchedules: snapshot.specialistSchedules,
+        scheduleExceptions: snapshot.scheduleExceptions,
+        agendaApiUrl,
         preparations: snapshot.preparations,
         encounters: snapshot.encounters,
         historyEntries: snapshot.historyEntries,
@@ -3203,6 +3583,11 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
         createAppointment,
         rescheduleAppointment,
         transitionAppointmentStatus,
+        updateClinicSchedule,
+        updateSpecialistSchedule,
+        upsertSpecialistException,
+        deleteSpecialistException,
+        getMockSpecialistAvailability,
         createPreparation,
         updatePreparation,
         appendPreparationAddendum,

@@ -119,13 +119,13 @@ export function DevRoleSwitcher() {
                   type="button"
                   onClick={() => {
                     setAuthMode('identity')
-                    setStatusMessage('Modo cambiado a Identity API (.NET 10).')
+                    setStatusMessage('Modo cambiado a APIs reales (.NET 10: Identity + Agenda).')
                   }}
                   className={`rounded px-2 py-1 text-xs font-semibold ${
                     authMode === 'identity' ? 'bg-teal-600 text-white' : 'text-slate-300'
                   }`}
                 >
-                  Identity API
+                  Identity + Agenda API
                 </button>
               </div>
             </div>

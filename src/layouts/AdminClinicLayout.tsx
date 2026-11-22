@@ -11,6 +11,7 @@ export function AdminClinicLayout({ children }: { children: ReactNode }) {
       ? [
           { to: '/admin/patients', label: 'Pacientes' },
           { to: '/admin/appointments', label: 'Agenda' },
+          { to: '/admin/schedules', label: 'Horarios' },
           { to: '/admin/exceptional-access', label: 'Accesos excepcionales' },
           { to: '/admin/staff', label: 'Personal y roles' },
           { to: '/admin/billing', label: 'Billing y cortes' },

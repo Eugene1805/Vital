@@ -537,3 +537,59 @@ export interface CutsStatusData {
   confirmedAmountMxn: number
   observedAmountMxn: number
 }
+
+export type ScheduleDayOfWeek =
+  | 'MONDAY'
+  | 'TUESDAY'
+  | 'WEDNESDAY'
+  | 'THURSDAY'
+  | 'FRIDAY'
+  | 'SATURDAY'
+  | 'SUNDAY'
+
+export interface ScheduleTimeSlot {
+  dayOfWeek: ScheduleDayOfWeek
+  startTime: string
+  endTime: string
+}
+
+export interface ClinicScheduleConfig {
+  tenantId: string
+  configured: boolean
+  slots: ScheduleTimeSlot[]
+  updatedByName: string | null
+  updatedAtGmt6: string | null
+}
+
+export interface SpecialistScheduleConfig {
+  tenantId: string
+  specialistId: string
+  useClinicFallback: boolean
+  ownSlots: ScheduleTimeSlot[]
+  updatedByName: string | null
+  updatedAtGmt6: string | null
+}
+
+export interface SpecialistScheduleException {
+  id: string
+  tenantId: string
+  specialistId: string
+  dateGmt6: string
+  isUnavailable: boolean
+  customStartTime: string | null
+  customEndTime: string | null
+  reason: string
+  createdByName: string
+  updatedAtGmt6: string
+}
+
+export type SchedulePolicyDecision =
+  | { allowed: true }
+  | {
+      allowed: false
+      code: string
+      message: string
+      conflictingCount?: number
+      conflictingAppointmentIds?: string[]
+      conflictingSlotsGmt6?: string[]
+    }
