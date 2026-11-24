@@ -16,6 +16,7 @@ import {
   type IdentityTenantSummaryDto,
 } from '../services/identityClient.ts'
 import { getAgendaApiUrl } from '../services/agendaClient.ts'
+import { getBillingApiUrl } from '../services/billingClient.ts'
 import type {
   Appointment,
   AppointmentStatus,
@@ -276,6 +277,7 @@ export interface MockStoreContextValue {
   specialistSchedules: SpecialistScheduleConfig[]
   scheduleExceptions: SpecialistScheduleException[]
   agendaApiUrl: string
+  billingApiUrl: string
   preparations: PreliminaryPreparation[]
   encounters: ClinicalEncounter[]
   historyEntries: ClinicalHistoryEntry[]
@@ -556,6 +558,7 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
   const [snapshot, setSnapshot] = useState<StoreSnapshot>(loadInitialSnapshot)
   const identityApiUrl = getIdentityApiUrl()
   const agendaApiUrl = getAgendaApiUrl()
+  const billingApiUrl = getBillingApiUrl()
   const [identityClient] = useState(() => createIdentityClient(identityApiUrl))
   const [authMode, setAuthModeState] = useState<IdentityAuthMode>(getInitialAuthMode)
   const [identityProfile, setIdentityProfile] = useState<IdentityAccountProfileDto | null>(null)
@@ -3538,6 +3541,7 @@ export function MockStoreProvider({ children }: { children: ReactNode }) {
         specialistSchedules: snapshot.specialistSchedules,
         scheduleExceptions: snapshot.scheduleExceptions,
         agendaApiUrl,
+        billingApiUrl,
         preparations: snapshot.preparations,
         encounters: snapshot.encounters,
         historyEntries: snapshot.historyEntries,

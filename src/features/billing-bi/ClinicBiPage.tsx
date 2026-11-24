@@ -1,20 +1,195 @@
-import { useState } from 'react'
-import { nowGmt6Iso } from '../../design-system/gmt6.ts'
+import { useEffect, useState } from 'react'
+import { formatDateTimeGmt6, nowGmt6Iso } from '../../design-system/gmt6.ts'
+import type {
+  AppointmentActivityData,
+  ClinicKpiKey,
+  CutsStatusData,
+  KpiEnvelope,
+  RecordedPaymentsData,
+} from '../../domain/types.ts'
 import { PAYMENT_METHOD_LABELS, evaluateClinicKpis, formatMxn } from '../../guards/billingBi.ts'
 import { useMockStore } from '../../mocks/useMockStore.ts'
+import { AgendaApiError, createAgendaClient } from '../../services/agendaClient.ts'
+import {
+  BillingApiError,
+  createBillingClient,
+  type BillingAdjustmentDto,
+} from '../../services/billingClient.ts'
 import { KpiCard } from './KpiCard.tsx'
 
+interface LiveClinicBiState {
+  key: string
+  agendaActivity: KpiEnvelope<ClinicKpiKey, AppointmentActivityData>
+  recordedPayments: KpiEnvelope<ClinicKpiKey, RecordedPaymentsData>
+  cutsStatus: KpiEnvelope<ClinicKpiKey, CutsStatusData>
+  adjustments: BillingAdjustmentDto[]
+}
+
+async function fetchLiveClinicBiState(params: {
+  key: string
+  agendaClient: ReturnType<typeof createAgendaClient>
+  billingClient: ReturnType<typeof createBillingClient>
+  periodStart: string
+  periodEnd: string
+  faultAgenda: boolean
+  faultBilling: boolean
+}): Promise<LiveClinicBiState> {
+  const {
+    key,
+    agendaClient,
+    billingClient,
+    periodStart,
+    periodEnd,
+    faultAgenda,
+    faultBilling,
+  } = params
+  const evaluatedAtGmt6 = nowGmt6Iso()
+  const from = periodStart || undefined
+  const to = periodEnd || undefined
+
+  const agendaPromise: Promise<KpiEnvelope<ClinicKpiKey, AppointmentActivityData>> = faultAgenda
+    ? Promise.resolve({
+        kpiKey: 'AGENDA_ACTIVITY',
+        status: 'UNAVAILABLE',
+        data: null,
+        evaluatedAtGmt6,
+        reason: 'El servicio Agenda no respondió para esta clínica (CU-16 A1).',
+      })
+    : agendaClient
+        .getClinicMetrics(from, to)
+        .then((dto) => ({
+          kpiKey: 'AGENDA_ACTIVITY' as const,
+          status: dto.status,
+          data: dto.data,
+          evaluatedAtGmt6: dto.evaluatedAtGmt6,
+        }))
+        .catch((err: unknown) => ({
+          kpiKey: 'AGENDA_ACTIVITY' as const,
+          status: 'UNAVAILABLE' as const,
+          data: null,
+          evaluatedAtGmt6,
+          reason:
+            err instanceof AgendaApiError
+              ? err.problem.message
+              : 'El servicio Agenda no respondió para esta clínica (CU-16 A1).',
+        }))
+
+  const paymentsPromise: Promise<KpiEnvelope<ClinicKpiKey, RecordedPaymentsData>> = faultBilling
+    ? Promise.resolve({
+        kpiKey: 'RECORDED_PAYMENTS',
+        status: 'UNAVAILABLE',
+        data: null,
+        evaluatedAtGmt6,
+        reason: 'El servicio Billing no respondió al consultar cobros registrados (CU-16 A1).',
+      })
+    : billingClient.getClinicPaymentsMetric(from, to).catch((err: unknown) => ({
+        kpiKey: 'RECORDED_PAYMENTS' as const,
+        status: 'UNAVAILABLE' as const,
+        data: null,
+        evaluatedAtGmt6,
+        reason:
+          err instanceof BillingApiError
+            ? err.problem.message
+            : 'El servicio Billing no respondió al consultar cobros registrados (CU-16 A1).',
+      }))
+
+  const cutsPromise: Promise<KpiEnvelope<ClinicKpiKey, CutsStatusData>> = faultBilling
+    ? Promise.resolve({
+        kpiKey: 'CUTS_STATUS',
+        status: 'UNAVAILABLE',
+        data: null,
+        evaluatedAtGmt6,
+        reason: 'El servicio Billing no respondió al consultar estado de cortes (CU-16 A1).',
+      })
+    : billingClient.getClinicCutsMetric(from, to).catch((err: unknown) => ({
+        kpiKey: 'CUTS_STATUS' as const,
+        status: 'UNAVAILABLE' as const,
+        data: null,
+        evaluatedAtGmt6,
+        reason:
+          err instanceof BillingApiError
+            ? err.problem.message
+            : 'El servicio Billing no respondió al consultar estado de cortes (CU-16 A1).',
+      }))
+
+  const adjustmentsPromise: Promise<BillingAdjustmentDto[]> = faultBilling
+    ? Promise.resolve([])
+    : billingClient
+        .listAdjustments()
+        .then((res) => res.items)
+        .catch(() => [])
+
+  const [agendaActivity, recordedPayments, cutsStatus, adjustments] = await Promise.all([
+    agendaPromise,
+    paymentsPromise,
+    cutsPromise,
+    adjustmentsPromise,
+  ])
+
+  return {
+    key,
+    agendaActivity,
+    recordedPayments,
+    cutsStatus,
+    adjustments,
+  }
+}
+
 export function ClinicBiPage() {
-  const { currentTenant, appointments, encounters, payments, cuts } = useMockStore()
+  const {
+    currentTenant,
+    authMode,
+    agendaApiUrl,
+    billingApiUrl,
+    appointments,
+    encounters,
+    payments,
+    cuts,
+  } = useMockStore()
+
+  const [agendaClient] = useState(() => createAgendaClient(agendaApiUrl))
+  const [billingClient] = useState(() => createBillingClient(billingApiUrl))
+
   const [periodStart, setPeriodStart] = useState('2026-11-01')
   const [periodEnd, setPeriodEnd] = useState('2026-11-30')
   const [faultAgenda, setFaultAgenda] = useState(false)
   const [faultClinical, setFaultClinical] = useState(false)
   const [faultBilling, setFaultBilling] = useState(false)
 
+  const [liveBiState, setLiveBiState] = useState<LiveClinicBiState | null>(null)
+
+  const isLive = authMode === 'identity'
+  const liveKey =
+    isLive && currentTenant
+      ? `${currentTenant.id}:${periodStart}:${periodEnd}:${faultAgenda}:${faultBilling}`
+      : ''
+
+  useEffect(() => {
+    if (!liveKey) return
+    let cancelled = false
+
+    void fetchLiveClinicBiState({
+      key: liveKey,
+      agendaClient,
+      billingClient,
+      periodStart,
+      periodEnd,
+      faultAgenda,
+      faultBilling,
+    }).then((next) => {
+      if (!cancelled) {
+        setLiveBiState(next)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [agendaClient, billingClient, faultAgenda, faultBilling, liveKey, periodEnd, periodStart])
+
   if (!currentTenant) return null
 
-  const kpis = evaluateClinicKpis({
+  const mockKpis = evaluateClinicKpis({
     tenant: currentTenant,
     appointments,
     encounters,
@@ -29,6 +204,17 @@ export function ClinicBiPage() {
       billing: faultBilling,
     },
   })
+
+  const activeLive = isLive && liveBiState && liveBiState.key === liveKey ? liveBiState : null
+  const kpis =
+    isLive && activeLive
+      ? {
+          agendaActivity: activeLive.agendaActivity,
+          completedConsultations: mockKpis.completedConsultations,
+          recordedPayments: activeLive.recordedPayments,
+          cutsStatus: activeLive.cutsStatus,
+        }
+      : mockKpis
 
   return (
     <div className="space-y-6">
@@ -48,6 +234,14 @@ export function ClinicBiPage() {
           Zona horaria fija: GMT-6 (México)
         </span>
       </div>
+
+      {isLive ? (
+        <div className="rounded-md border border-teal-200 bg-teal-50 px-4 py-2.5 text-xs text-teal-950">
+          KPIs <strong className="font-mono">AGENDA_ACTIVITY</strong> ({agendaApiUrl}),{' '}
+          <strong className="font-mono">RECORDED_PAYMENTS</strong> y{' '}
+          <strong className="font-mono">CUTS_STATUS</strong> ({billingApiUrl}) consultados en vivo sin netear ajustes vinculados (D-BI-03).
+        </div>
+      ) : null}
 
       <section className="space-y-4 rounded-lg border border-divider bg-surface p-4 text-sm">
         <div className="flex flex-wrap items-end gap-4">
@@ -145,7 +339,7 @@ export function ClinicBiPage() {
 
         <KpiCard
           title="Consultas realizadas"
-          sourceLabel="Clinical (GMT-6)"
+          sourceLabel={isLive ? 'Clinical (prototipo local GMT-6)' : 'Clinical (GMT-6)'}
           hint="Contabiliza atenciones FINALIZADA aunque su nota siga en BORRADOR (CU-16)."
           envelope={kpis.completedConsultations}
           renderData={(data) => (
@@ -169,6 +363,7 @@ export function ClinicBiPage() {
         <KpiCard
           title="Cobros registrados"
           sourceLabel="Billing (GMT-6)"
+          hint="Métrica base ordinaria sobre PatientPayment sin netear ajustes vinculados (D-BI-03)."
           envelope={kpis.recordedPayments}
           renderData={(data) => (
             <div className="space-y-2 text-sm">
@@ -188,6 +383,7 @@ export function ClinicBiPage() {
         <KpiCard
           title="Estado de cortes"
           sourceLabel="Billing (GMT-6)"
+          hint="Métrica base ordinaria sobre SpecialistCut sin netear ajustes vinculados (D-BI-03)."
           envelope={kpis.cutsStatus}
           renderData={(data) => (
             <div className="space-y-2 text-sm">
@@ -203,6 +399,29 @@ export function ClinicBiPage() {
           )}
         />
       </div>
+
+      {isLive && activeLive && activeLive.adjustments.length > 0 ? (
+        <section className="rounded-lg border border-divider bg-surface p-4 text-xs">
+          <h2 className="text-sm font-bold text-ink">
+            Ajustes compensatorios vinculados (fuera del cálculo base KPI · D-BI-03)
+          </h2>
+          <ul className="mt-2 space-y-1.5">
+            {activeLive.adjustments.map((adj) => (
+              <li
+                key={adj.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-divider bg-slate-50 px-3 py-2"
+              >
+                <span>
+                  <strong className="font-mono">{adj.folio}</strong> [{adj.targetType}] · {adj.reason} ({adj.actorName} · {formatDateTimeGmt6(adj.createdAtGmt6)})
+                </span>
+                <span className="font-mono font-bold tabular-nums">
+                  {adj.deltaMxn > 0 ? `+${formatMxn(adj.deltaMxn)}` : formatMxn(adj.deltaMxn)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   )
 }
